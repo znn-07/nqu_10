@@ -13,7 +13,7 @@ except Exception:
     print("❌ 找不到名為 'nqu' 的知識庫，請先執行 build_db.py 匯入資料！")
     sys.exit(1)
 
-# ===== 2. 讀取 Prompt 模板 =====
+# ===== 2. 讀取外部 Prompt 模板 =====
 current_dir = os.path.dirname(os.path.abspath(__file__))
 prompt_path = os.path.join(current_dir, "prompt.txt")
 
@@ -62,29 +62,28 @@ while True:
         )
 
         # 組合上下文
-        if result and result["documents"] and result["documents"][0]:
-            context = "\n\n".join(result["documents"][0])
+        if result and result["documents"]:
+            # 自動適應 ChromaDB 的二維或三維回傳格式
+            docs_layer = result["documents"][0] if isinstance(result["documents"][0], list) and isinstance(result["documents"][0][0], str) else result["documents"]
+            metas_layer = result["metadatas"][0] if isinstance(result["metadatas"][0], list) and isinstance(result["metadatas"][0][0], dict) else result["metadatas"]
+            
+            context_list = []
+            for doc, meta in zip(docs_layer, metas_layer):
+                # 取得該區塊真實的檔案名稱
+                filename = meta.get("source_file") or meta.get("source") or "未知來源.txt"
+                # 強行將檔名標籤與內容黏在一起
+                context_list.append(f"【文獻來源檔案：{filename}】\n{doc}")
+            
+            context = "\n\n".join(context_list)
         else:
             context = "（未檢索到相關文獻）"
 
-        # 3-3. 建立終極提示詞（修正：字串靠左對齊，消除多餘空白）
-        prompt = f"""你是一位極度嚴格、絕不說廢話的金門大學校史導覽員。
+        # 3-3. 帶入外部 Prompt 模板（自動取代 template 中的變數）
+        prompt = template.format(
+            context=context,
+            question=question
+        )
 
-請你【嚴格且唯一】根據下方的參考文獻內容回答問題。如果答案在文獻中，請直接吐出答案。
-
-【參考文獻內容】
-{context}
-
-【使用者提問】
-{question}
-
-【回答規則】
-1. 請直接回答答案本身，不准做任何自我介紹、不准說歡迎詞（如：你好、很高興為您服務、我是AI助手等廢話一律不准說）。
-2. 如果文獻中找不到答案，請直接回答：「資料庫中沒有相關資訊」，絕對不准自己從別的地方湊字來編造。
-
-請直接給出答案："""
-
-        # 修正：改用換行 \n 印出，不再用 \r 覆蓋，避免畫面殘留「思考中...」的髒字
         print("\n🤖 助理回答：")
 
         # 3-4. 呼叫大模型並啟用「終端機串流打字效果」
